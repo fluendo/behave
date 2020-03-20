@@ -684,28 +684,23 @@ class ModelRunner(object):
             r = os.fdopen(r, "r")
 
             start = time.monotonic()
-            print("\nWaiting for pid {}".format(newpid))
+            
             while 1:
                 now = time.monotonic()
 
                 if timeout > 0 and (now-start) > timeout:
-                    print("\nKilling subprocess {} (timeout)".format(newpid))
                     os.kill(newpid, signal.SIGTERM)
-                    print("\nKilled subprocess {} (timeout)".format(newpid))
                     failed = True
                     forEachStatusInFeatures(feature, setStatus, Status.failed)
                     break
     
-            print("timeout in {} seconds".format(int(now-start)));
                 pid, failed = os.waitpid(newpid, os.WNOHANG)
                 if pid>0:
-                    print("\nChild process exit with failed:{}".format(failed))
                     break
                 time.sleep(1)
             
             child_pids.remove(newpid)
             results = r.read()
-            print("\nExiting run_model with failed:{} results:{}".format(failed, results))
             if not results is None and len(results)>0:
                 fillResults(feature, results)
             if failed:
@@ -715,7 +710,7 @@ class ModelRunner(object):
         except KeyboardInterrupt:
             self.aborted = True
             return False
-      return True
+        return True
 
     def run_model(self, features=None):
         # pylint: disable=too-many-branches
