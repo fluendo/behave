@@ -641,56 +641,65 @@ class ModelRunner(object):
         self.capture_controller.teardown_capture()
 
     def run_one_feature(self, feature):
-      try:
-          self.feature = feature
-          for formatter in self.formatters:
-              formatter.uri(feature.filename)
+        try:
+            self.feature = feature
+            for formatter in self.formatters:
+                formatter.uri(feature.filename)
 
-          r, w = os.pipe()
-          newpid = os.fork()
-          if newpid == 0:
-            os.close(r)
-            w = os.fdopen(w, "w")
-            ret = feature.run(self)
-            results = extractResults(feature)
-            print("Extracted results: {}".format(results))
-            w.write(results)
-            w.flush()
-            os._exit(ret)
+            def read_timeout(tags):
+                tag_name = "timeout="
+                for tag in tags:
+                    res = tag.find(tag_name)
+                    if res == 0:
+                        return int(tag[len(tag_name):])
+                return 0
 
-          os.close(w)
-          r = os.fdopen(r, "r")
+            timeout = read_timeout(feature.tags)
+            r, w = os.pipe()
+            newpid = os.fork()
+            if newpid == 0:
+                os.close(r)
+                w = os.fdopen(w, "w")
+                ret = feature.run(self)
+                results = extractResults(feature)
+                w.write(results)
+                w.flush()
+                os._exit(ret)
 
-          start = time.monotonic()
-          print("\nWaiting for pid {}".format(newpid))
-          while 1:
-            now = time.monotonic()
+            os.close(w)
+            r = os.fdopen(r, "r")
 
-            if (now-start) > 10:
-              print("\nKilling subprocess {} (timeout)".format(newpid))
-              os.kill(newpid, signal.SIGTERM)
-              print("\nKilled subprocess {} (timeout)".format(newpid))
-              failed = True
-              break
-  
+            start = time.monotonic()
+            print("\nWaiting for pid {}".format(newpid))
+            while 1:
+                now = time.monotonic()
+
+                if timeout > 0 and (now-start) > timeout:
+                    print("\nKilling subprocess {} (timeout)".format(newpid))
+                    os.kill(newpid, signal.SIGTERM)
+                    print("\nKilled subprocess {} (timeout)".format(newpid))
+                    failed = True
+                    forEachStatusInFeatures(feature, setStatus, Status.failed)
+                    break
+    
             print("timeout in {} seconds".format(int(now-start)));
-            pid, failed = os.waitpid(newpid, os.WNOHANG)
-            if pid>0:
-              print("\nChild process exit with failed:{}".format(failed))
-              break
-            time.sleep(1)
-        
-          results = r.read()
-          print("\nExiting run_model with failed:{} results:{}".format(failed, results))
-          if not results is None and len(results)>0:
-              fillResults(feature, results)
-          if failed:
-              if self.config.stop or self.aborted:
-                  # -- FAIL-EARLY: After first failure.
-                  return False
-      except KeyboardInterrupt:
-          self.aborted = True
-          return False
+                pid, failed = os.waitpid(newpid, os.WNOHANG)
+                if pid>0:
+                    print("\nChild process exit with failed:{}".format(failed))
+                    break
+                time.sleep(1)
+            
+            results = r.read()
+            print("\nExiting run_model with failed:{} results:{}".format(failed, results))
+            if not results is None and len(results)>0:
+                fillResults(feature, results)
+            if failed:
+                if self.config.stop or self.aborted:
+                    # -- FAIL-EARLY: After first failure.
+                    return False
+        except KeyboardInterrupt:
+            self.aborted = True
+            return False
       return True
 
     def run_model(self, features=None):
