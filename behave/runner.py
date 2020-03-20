@@ -537,6 +537,15 @@ def fillResults(feature, results):
 
     forEachStatusInFeatures(feature, fillStatusAndRemoveOne, input_list)
 
+child_pids = []
+
+def signal_handler(signal1, frame):
+    print("Detected program exit\n")
+    for pid in child_pids:
+        print("Killing process {}\n".format(pid))
+        os.kill(pid, signal.SIGTERM)
+    exit(5)
+
 class ModelRunner(object):
     """
     Test runner for a behave model (features).
@@ -660,11 +669,16 @@ class ModelRunner(object):
             if newpid == 0:
                 os.close(r)
                 w = os.fdopen(w, "w")
+                sys.stdin.close()
                 ret = feature.run(self)
                 results = extractResults(feature)
                 w.write(results)
                 w.flush()
                 os._exit(ret)
+
+            child_pids.append(newpid)
+            signal.signal(signal.SIGTERM, signal_handler)
+            signal.signal(signal.SIGINT, signal_handler)
 
             os.close(w)
             r = os.fdopen(r, "r")
@@ -689,6 +703,7 @@ class ModelRunner(object):
                     break
                 time.sleep(1)
             
+            child_pids.remove(newpid)
             results = r.read()
             print("\nExiting run_model with failed:{} results:{}".format(failed, results))
             if not results is None and len(results)>0:
