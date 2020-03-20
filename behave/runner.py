@@ -10,6 +10,8 @@ import os.path
 import sys
 import warnings
 import weakref
+import time
+import signal
 
 import six
 
@@ -28,9 +30,7 @@ if six.PY2:
     import traceback2 as traceback
 else:
     import traceback
-    
-import time
-import signal
+
 
 class CleanupError(RuntimeError):
     pass
@@ -498,7 +498,7 @@ def path_getrootdir(path):
     return os.path.sep
 
 
-def forEachStatusInFeatures(feature, f, param):
+def _forEachStatusInFeatures(feature, f, param):
     def foreachscenario(scenarios, f, param):
         for s in scenarios:
             if hasattr(s, 'scenarios'):
@@ -511,40 +511,44 @@ def forEachStatusInFeatures(feature, f, param):
     f(feature, param)
     foreachscenario(feature.scenarios, f, param)
 
-def extractResults(feature):
+
+def _extractResults(feature):
     output_list = []
 
     def appendStatus(item, output):
         output.append(str(item.status.value))
 
-    forEachStatusInFeatures(feature, appendStatus, output_list)
+    _forEachStatusInFeatures(feature, appendStatus, output_list)
     return str("").join(output_list)
 
-def setStatus(item, status):
+
+def _setStatus(item, status):
     if hasattr(item, "set_status") and callable(getattr(item, 'set_status')):
         item.set_status(status)
     else:
         item.status = status
 
-def fillResults(feature, results):
+
+def _fillResults(feature, results):
     input_list = list(results)
 
     def fillStatusAndRemoveOne(item, input_list):
         if len(input_list) > 0:
             s = Status(int(input_list[0]))
             del input_list[0]
-            setStatus(item, s)
+            _setStatus(item, s)
 
-    forEachStatusInFeatures(feature, fillStatusAndRemoveOne, input_list)
+    _forEachStatusInFeatures(feature, fillStatusAndRemoveOne, input_list)
+
 
 child_pids = []
-
 def signal_handler(signal1, frame):
     print("Detected program exit\n")
     for pid in child_pids:
         print("Killing process {}\n".format(pid))
         os.kill(pid, signal.SIGTERM)
     exit(5)
+
 
 class ModelRunner(object):
     """
@@ -649,7 +653,7 @@ class ModelRunner(object):
     def teardown_capture(self):
         self.capture_controller.teardown_capture()
 
-    def run_one_feature(self, feature):
+    def _run_one_feature(self, feature):
         try:
             self.feature = feature
             for formatter in self.formatters:
@@ -671,7 +675,7 @@ class ModelRunner(object):
                 w = os.fdopen(w, "w")
                 sys.stdin.close()
                 ret = feature.run(self)
-                results = extractResults(feature)
+                results = _extractResults(feature)
                 w.write(results)
                 w.flush()
                 os._exit(ret)
@@ -691,7 +695,7 @@ class ModelRunner(object):
                 if timeout > 0 and (now-start) > timeout:
                     os.kill(newpid, signal.SIGTERM)
                     failed = True
-                    forEachStatusInFeatures(feature, setStatus, Status.failed)
+                    _forEachStatusInFeatures(feature, _setStatus, Status.failed)
                     break
     
                 pid, failed = os.waitpid(newpid, os.WNOHANG)
@@ -702,7 +706,7 @@ class ModelRunner(object):
             child_pids.remove(newpid)
             results = r.read()
             if not results is None and len(results)>0:
-                fillResults(feature, results)
+                _fillResults(feature, results)
             if failed:
                 if self.config.stop or self.aborted:
                     # -- FAIL-EARLY: After first failure.
@@ -711,6 +715,7 @@ class ModelRunner(object):
             self.aborted = True
             return False
         return True
+
 
     def run_model(self, features=None):
         # pylint: disable=too-many-branches
@@ -732,8 +737,7 @@ class ModelRunner(object):
         undefined_steps_initial_size = len(self.undefined_steps)
         for feature in features:
             if run_feature:
-                print("Running {}", feature)
-                if not self.run_one_feature(feature):
+                if not self._run_one_feature(feature):
                   failed_count += 1
 
             # -- ALWAYS: Report run/not-run feature to reporters.
