@@ -498,6 +498,45 @@ def path_getrootdir(path):
     return os.path.sep
 
 
+def forEachStatusInFeatures(feature, f, param):
+    def foreachscenario(scenarios, f, param):
+        for s in scenarios:
+            if hasattr(s, 'scenarios'):
+                foreachscenario(s.scenarios, f, param)
+            else:
+                f(s, param)
+                for step in s.steps:
+                    f(step, param)
+
+    f(feature, param)
+    foreachscenario(feature.scenarios, f, param)
+
+def extractResults(feature):
+    output_list = []
+
+    def appendStatus(item, output):
+        output.append(str(item.status.value))
+
+    forEachStatusInFeatures(feature, appendStatus, output_list)
+    return str("").join(output_list)
+
+def setStatus(item, status):
+    if hasattr(item, "set_status") and callable(getattr(item, 'set_status')):
+        item.set_status(status)
+    else:
+        item.status = status
+
+def fillResults(feature, results):
+    input_list = list(results)
+
+    def fillStatusAndRemoveOne(item, input_list):
+        if len(input_list) > 0:
+            s = Status(int(input_list[0]))
+            del input_list[0]
+            setStatus(item, s)
+
+    forEachStatusInFeatures(feature, fillStatusAndRemoveOne, input_list)
+
 class ModelRunner(object):
     """
     Test runner for a behave model (features).
@@ -607,9 +646,20 @@ class ModelRunner(object):
           for formatter in self.formatters:
               formatter.uri(feature.filename)
 
+          r, w = os.pipe()
           newpid = os.fork()
           if newpid == 0:
-            os._exit(feature.run(self))
+            os.close(r)
+            w = os.fdopen(w, "w")
+            ret = feature.run(self)
+            results = extractResults(feature)
+            print("Extracted results: {}".format(results))
+            w.write(results)
+            w.flush()
+            os._exit(ret)
+
+          os.close(w)
+          r = os.fdopen(r, "r")
 
           start = time.monotonic()
           print("\nWaiting for pid {}".format(newpid))
@@ -629,8 +679,11 @@ class ModelRunner(object):
               print("\nChild process exit with failed:{}".format(failed))
               break
             time.sleep(1)
-          print("\nExiting run_model with failed:{}".format(failed))
         
+          results = r.read()
+          print("\nExiting run_model with failed:{} results:{}".format(failed, results))
+          if not results is None and len(results)>0:
+              fillResults(feature, results)
           if failed:
               if self.config.stop or self.aborted:
                   # -- FAIL-EARLY: After first failure.
@@ -638,7 +691,6 @@ class ModelRunner(object):
       except KeyboardInterrupt:
           self.aborted = True
           return False
-      feature.set_status(Status.passed)
       return True
 
     def run_model(self, features=None):
