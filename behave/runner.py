@@ -21,13 +21,16 @@ from behave.runner_util import \
     collect_feature_locations, parse_features, \
     exec_file, load_step_modules, PathManager
 from behave.step_registry import registry as the_step_registry
+from behave.model_core import Status
 
 if six.PY2:
     # -- USE PYTHON3 BACKPORT: With unicode traceback support.
     import traceback2 as traceback
 else:
     import traceback
-
+    
+import time
+import signal
 
 class CleanupError(RuntimeError):
     pass
@@ -598,6 +601,46 @@ class ModelRunner(object):
     def teardown_capture(self):
         self.capture_controller.teardown_capture()
 
+    def run_one_feature(self, feature):
+      try:
+          self.feature = feature
+          for formatter in self.formatters:
+              formatter.uri(feature.filename)
+
+          newpid = os.fork()
+          if newpid == 0:
+            os._exit(feature.run(self))
+
+          start = time.monotonic()
+          print("\nWaiting for pid {}".format(newpid))
+          while 1:
+            now = time.monotonic()
+
+            if (now-start) > 10:
+              print("\nKilling subprocess {} (timeout)".format(newpid))
+              os.kill(newpid, signal.SIGTERM)
+              print("\nKilled subprocess {} (timeout)".format(newpid))
+              failed = True
+              break
+  
+            print("timeout in {} seconds".format(int(now-start)));
+            pid, failed = os.waitpid(newpid, os.WNOHANG)
+            if pid>0:
+              print("\nChild process exit with failed:{}".format(failed))
+              break
+            time.sleep(1)
+          print("\nExiting run_model with failed:{}".format(failed))
+        
+          if failed:
+              if self.config.stop or self.aborted:
+                  # -- FAIL-EARLY: After first failure.
+                  return False
+      except KeyboardInterrupt:
+          self.aborted = True
+          return False
+      feature.set_status(Status.passed)
+      return True
+
     def run_model(self, features=None):
         # pylint: disable=too-many-branches
         if not self.context:
@@ -618,21 +661,9 @@ class ModelRunner(object):
         undefined_steps_initial_size = len(self.undefined_steps)
         for feature in features:
             if run_feature:
-                try:
-                    self.feature = feature
-                    for formatter in self.formatters:
-                        formatter.uri(feature.filename)
-
-                    failed = feature.run(self)
-                    if failed:
-                        failed_count += 1
-                        if self.config.stop or self.aborted:
-                            # -- FAIL-EARLY: After first failure.
-                            run_feature = False
-                except KeyboardInterrupt:
-                    self.aborted = True
-                    failed_count += 1
-                    run_feature = False
+                print("Running {}", feature)
+                if not self.run_one_feature(feature):
+                  failed_count += 1
 
             # -- ALWAYS: Report run/not-run feature to reporters.
             # REQUIRED-FOR: Summary to keep track of untested features.
