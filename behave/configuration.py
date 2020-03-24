@@ -359,6 +359,10 @@ With "auto_detect", tag-expressions v1 and v2 are auto-detected.
      dict(action="store_true",
           help="Stop running tests at the first failure.")),
 
+    (("--fork",),
+     dict(action="store_true",
+          help="Run each feature in a different process")),
+
     # -- DISABLE-UNUSED-OPTION: Not used anywhere.
     # (("-S", "--strict"),
     # dict(action="store_true",
@@ -925,6 +929,7 @@ class Configuration(object):
         self.stop = True
         self.log_capture = False
         self.stdout_capture = False
+        self.fork = False
 
         # -- EXTEND TAG-EXPRESSION: Add @wip tag
         self.tags = self.tags or []
