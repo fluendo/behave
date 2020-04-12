@@ -104,12 +104,12 @@ def run_behave(config, runner_class=None):
 
     # -- MAIN PART:
     runner = None
-    failed = True
+    return_code = 1
     try:
         reset_runtime()
         runner = RunnerPlugin(runner_class).make_runner(config)
         print("USING RUNNER: {0}".format(make_scoped_class_name(runner)))
-        failed = runner.run()
+        return_code = runner.run()
     except ParserError as e:
         print(u"ParserError: %s" % e)
     except ConfigError as e:
@@ -140,11 +140,7 @@ def run_behave(config, runner_class=None):
 
     if config.show_snippets and runner and runner.undefined_steps:
         print_undefined_step_snippets(runner.undefined_steps,
-                                      colored=config.has_colored_mode())
-
-    return_code = 0
-    if failed:
-        return_code = 1
+                                      colored=config.color)
     return return_code
 
 
