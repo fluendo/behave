@@ -154,6 +154,10 @@ class Context(object):
     LAYER_NAMES = ["testrun", "feature", "rule", "scenario"]
     FAIL_ON_CLEANUP_ERRORS = True
 
+    # compatibility with previous versions of behave
+    BEHAVE = ContextMode.BEHAVE
+    USER = ContextMode.USER
+
     def __init__(self, runner):
         self._runner = weakref.proxy(runner)
         self._config = runner.config
