@@ -822,6 +822,12 @@ class ModelRunner(object):
         return True, feature
 
     def run_model(self, features=None):
+        if self.config.just_list:
+            for feature in self.features:
+                if feature.should_run(self.config):
+                    print(feature.filename)
+            return False
+
         # pylint: disable=too-many-branches
         if not self.context:
             self.context = Context(self)
