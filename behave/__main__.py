@@ -97,6 +97,7 @@ def run_behave(config, runner_class=None):
 
     # -- MAIN PART:
     failed = True
+    return_code = 0
     try:
         reset_runtime()
         runner = runner_class(config)
