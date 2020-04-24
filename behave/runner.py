@@ -24,7 +24,7 @@ from behave.runner_util import (
 )
 from behave.step_registry import registry as the_step_registry
 from enum import Enum
-from behave.model_core import Status
+from behave.model_core import Status, StatusError
 
 if six.PY2:
     # -- USE PYTHON3 BACKPORT: With unicode traceback support.
@@ -800,10 +800,12 @@ class ModelRunner(object):
                     else:
                         print("Child Process finished with exit code {}"
                               .format(proc.exitcode))
+                        error = Error.crash
                 else:
                     print("killing Child Process after {} seconds timeout"
                           .format(timeout))
                     proc.terminate()
+                    error = Error.timeout
 
                 def setStatus(item, status):
                     if hasattr(item, "set_status") and callable(getattr(item,
@@ -814,7 +816,8 @@ class ModelRunner(object):
 
                 self._forEachItemInFeatures(feature,
                                             setStatus,
-                                            Status.failed)
+                                            Status.failed,
+                                            error)
                 return False, feature
         except KeyboardInterrupt:
             self.abort(reason="KeyboardInterrupt")
@@ -882,7 +885,11 @@ class ModelRunner(object):
                   or (len(self.undefined_steps) > undefined_steps_initial_size)
                   or cleanups_failed)
                   # XXX-MAYBE: or context.failed)
-        return failed
+
+        return_code = 0
+        if failed:
+            return_code = self.features[-1].status_error.value
+        return return_code
 
     def run(self):
         """

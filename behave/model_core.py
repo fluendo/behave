@@ -37,6 +37,16 @@ def make_relpath_if_possible(filename, base_directory=None):
 # -----------------------------------------------------------------------------
 # GENERIC MODEL CLASSES:
 # -----------------------------------------------------------------------------
+
+class StatusError(Enum):
+    """Provides addicional error info for feature.
+    Features use: none, crash, timeout
+    """
+    none = 1
+    timeout = 2
+    crash = 3
+
+
 class Status(Enum):
     """Provides the (test-run) status of a model element.
     Features and Scenarios use: untested, skipped, passed, failed.
