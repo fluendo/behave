@@ -70,6 +70,7 @@ Best sources are:
 # pylint: enable=line-too-long
 
 from __future__ import absolute_import
+import time
 import os.path
 import codecs
 from xml.etree import ElementTree
@@ -87,7 +88,7 @@ if six.PY2:
     import traceback2 as traceback
 else:
     import traceback
-
+from behave.model_core import Status, StatusError
 
 def CDATA(text=None):   # pylint: disable=invalid-name
     # -- issue #70: remove_ansi_escapes(text)
@@ -260,7 +261,8 @@ class JUnitReporter(Reporter):
 
         tree = ElementTreeWithCDATA(suite)
         report_dirname = self.config.junit_directory
-        report_basename = u'TESTS-%s.xml' % feature_filename
+        report_basename = u'TESTS-{}-{}.xml'.format(feature_filename,
+                                                    int(time.time()*1000000))
         report_filename = os.path.join(report_dirname, report_basename)
         tree.write(codecs.open(report_filename, "wb"), "UTF-8")
 
@@ -427,6 +429,13 @@ class JUnitReporter(Reporter):
             else:
                 skip = ElementTree.Element(u'skipped')
                 case.append(skip)
+
+        if scenario.status_error == StatusError.none:
+            case.set(u"status_error", "none")
+        elif scenario.status_error == StatusError.timeout:
+            case.set(u"status_error", "timeout")
+        elif scenario.status_error == StatusError.crash:
+            case.set(u"status_error", "crash")
 
         # Create stdout section for each test case
         stdout = ElementTree.Element(u"system-out")
