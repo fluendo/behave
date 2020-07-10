@@ -81,6 +81,7 @@ from behave.reporter.base import Reporter
 from behave.model import Rule, Scenario, ScenarioOutline, Step
 from behave.model_core import Status
 from behave.formatter import ansi_escapes
+from behave.model_core import Status, StatusError
 from behave.model_describe import ModelDescriptor
 from behave.summary import SummaryCollector, SummaryCounts, StatusCounts
 from behave.textutil import indent, make_indentation, text as _text
@@ -483,6 +484,13 @@ class JUnitReporter(Reporter):
             # -- ALWAYS ADD TO THE REPORT:
             skip = ElementTree.Element(u'skipped')
             case.append(skip)
+
+        if scenario.status_error == StatusError.none:
+            case.set(u"status_error", "none")
+        elif scenario.status_error == StatusError.timeout:
+            case.set(u"status_error", "timeout")
+        elif scenario.status_error == StatusError.crash:
+            case.set(u"status_error", "crash")
 
         # Create stdout section for each test case
         stdout = ElementTree.Element(u"system-out")
