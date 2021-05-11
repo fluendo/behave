@@ -623,17 +623,26 @@ class ModelRunner(object):
         self.capture_controller.teardown_capture()
 
     def _forEachItemInFeatures(self, feature, f, param):
-        def foreachscenario(scenarios, f, param):
-            for s in scenarios:
-                if hasattr(s, 'scenarios'):
-                    foreachscenario(s.scenarios, f, param)
-                else:
-                    f(s, param)
-                    for step in s.steps:
-                        f(step, param)
+        def check(obj, attrib):
+            return hasattr(obj, attrib) and getattr(obj, attrib) is not None
 
-        f(feature, param)
-        foreachscenario(feature.scenarios, f, param)
+        def foreachitem(item):
+            f(item, param)
+            if check(item, 'scenarios'):
+                for x in item.scenarios:
+                    foreachitem(x)
+            if check(item, 'examples'):
+                for x in item.examples:
+                    f(x, param)
+            if check(item, 'steps'):
+                for step in item.steps:
+                    f(step, param)
+            if check(item, 'parser'):
+                foreachitem(item.parser)
+            if check(item, 'statement'):
+                foreachitem(item.statement)
+
+        foreachitem(feature)
 
     def _run_feature(self, feature, q):
         try:
