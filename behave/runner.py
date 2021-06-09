@@ -841,6 +841,13 @@ class ModelRunner(object):
                     print(feature.filename)
             return False
 
+        if self.config.just_list_tags:
+            for feature in self.features:
+                for scenario in feature.scenarios:
+                    if scenario.should_run(self.config):
+                        print("{} : {}".format(scenario.tags, scenario.name))
+            return False
+
         # pylint: disable=too-many-branches
         if not self.context:
             self.context = Context(self)
