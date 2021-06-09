@@ -301,6 +301,10 @@ options = [
      dict(action="store_true",
           help="Do not run any test, just enumerate and print file paths")),
 
+    (("--just-list-tags",),
+     dict(action="store_true",
+          help="Do not run any test, just enumerate tags")),
+
     # -- DISABLE-UNUSED-OPTION: Not used anywhere.
     # (("-S", "--strict"),
     # dict(action="store_true",
