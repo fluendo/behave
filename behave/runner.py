@@ -653,6 +653,11 @@ class ModelRunner(object):
                     delattr(item, 'exc_traceback')
 
             self._forEachItemInFeatures(feature, clearTraceback, 0)
+
+            for scenario in feature.scenarios:
+                # replace tags array with new strings to avoid <class 'super'> after memory release
+                scenario.tags = [str(tag) for tag in scenario.tags]
+
             q.put(feature)
             return ret
         except Exception as e: # pylint: disable=broad-except
