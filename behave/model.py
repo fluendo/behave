@@ -357,7 +357,7 @@ class ScenarioContainer(TagAndStatusStatement, Replayable):
             self.set_status(Status.skipped)
         assert self.status.is_final() #< skipped, failed or passed.
 
-    def run(self, runner):
+    def run(self, runner, before_runitem_func = None, after_runitem_func = None):
         """Run ScenarioContainer with its scenarios.
 
         :param runner:  Runner to use.
@@ -407,6 +407,8 @@ class ScenarioContainer(TagAndStatusStatement, Replayable):
         if not skip_entity_untested:
             # -- RUN: Rules, Scenarios or ScenarioOutlines
             for run_item in self.run_items:
+                if before_runitem_func is not None and before_runitem_func(run_item):
+                    continue
                 # -- OPTIONAL: Select scenario by name (regular expressions).
                 should_run_with_name = \
                     getattr(run_item, "should_run_with_name_select", None)
@@ -416,6 +418,10 @@ class ScenarioContainer(TagAndStatusStatement, Replayable):
                     continue
 
                 failed = run_item.run(runner)
+
+                if after_runitem_func is not None:
+                    after_runitem_func(run_item)
+
                 if failed:
                     failed_count += 1
                     if runner.config.stop or runner.aborted:
