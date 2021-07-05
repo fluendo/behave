@@ -294,7 +294,7 @@ class AbstractSummaryReporter(Reporter):
 
         stream.write("\n{kind} scenarios:\n".format(kind=kind))
         for scenario in scenarios:
-            stream.write(u"  %s  %s\n" % (scenario.location, scenario.name))
+            stream.write(u"  %s %s  %s\n" % (', '.join(t for t in scenario.tags if len(t.split('-')) == 2), scenario.location, scenario.name))
 
     def print_failing_scenarios(self, stream=None):
         self._do_print_problematic_scenarios("Failing", self.failed_scenarios,
