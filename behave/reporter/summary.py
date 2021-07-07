@@ -161,7 +161,8 @@ class SummaryReporter(Reporter):
 
         stream.write("\nFailing scenarios:\n")
         for scenario in self.failed_scenarios:
-            stream.write(u"  %s  %s\n" % (scenario.location, scenario.name))
+            # add the list of tags matching ###-### so we will show the issue identifier with the error OPE-1234
+            stream.write(u"  %s %s  %s\n" % (', '.join(t for t in scenario.tags if len(t.split('-'))==2 ), scenario.location, scenario.name))
 
     def compute_summary_sums(self):
         """(Re)Compute summary sum of all counts (except: all)."""
