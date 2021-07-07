@@ -10,6 +10,7 @@ import sys
 import warnings
 import weakref
 from multiprocessing import Process, Queue
+from queue import Empty
 
 import six
 
@@ -31,6 +32,18 @@ if six.PY2:
     import traceback2 as traceback
 else:
     import traceback
+
+import time
+
+class Timer:
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.start = time.time()
+
+    def elapsed(self):
+        return time.time() - self.start
 
 
 class CleanupError(RuntimeError):
@@ -757,22 +770,47 @@ class ModelRunner(object):
 
         foreachitem(feature)
 
-    def _run_feature(self, feature, q):
+    class QueueEvent(Enum):
+        # a test scenario is going to start
+        SCENARIO_STARTED = 0
+
+        # a test scenario has finished
+        SCENARIO_FINISHED = 1
+
+        # a test feature (the file) has finished
+        FEATURE_FINISHED = 2
+
+    def _run_feature(self, feature, queue, next):
         try:
-            ret = feature.run(self)
+            # scenarios/feature can't be added to the queue after running
+            def prepare_for_pickle(item):
+                def clean(item, param):
+                    if hasattr(item, 'exc_traceback'):
+                        # pickle will fail if traceback is not removed
+                        delattr(item, 'exc_traceback')
 
-            def clearTraceback(item, param):
-                if hasattr(item, 'exc_traceback'):
-                    delattr(item, 'exc_traceback')
+                    if hasattr(item, 'tags'):
+                        # replace tags array with new strings to avoid <class 'super'> after memory release
+                        item.tags = [str(tag) for tag in item.tags]
 
-            self._forEachItemInFeatures(feature, clearTraceback, 0)
+                # pickle process will file if we dont clear traceback
+                self._forEachItemInFeatures(item, clean, 0)
 
-            for scenario in feature.scenarios:
-                # replace tags array with new strings to avoid <class 'super'> after memory release
-                scenario.tags = [str(tag) for tag in scenario.tags]
+            def before_run_scenario(scenario):
+                if next > scenario.counter:
+                    return True
+                queue.put((ModelRunner.QueueEvent.SCENARIO_STARTED, scenario))
+                return False
 
-            q.put(feature)
-            return ret
+            def after_run_scenario(scenario):
+                prepare_for_pickle(scenario)
+                queue.put((ModelRunner.QueueEvent.SCENARIO_FINISHED, scenario))
+
+            ret = feature.run(self, before_run_scenario, after_run_scenario)
+
+            prepare_for_pickle(feature)
+            queue.put((ModelRunner.QueueEvent.FEATURE_FINISHED, feature))
+            return 0
         except Exception as e: # pylint: disable=broad-except
             print("_run_feature() -> ERROR {}".format(e))
             return sys.exit(255)
@@ -802,38 +840,68 @@ class ModelRunner(object):
                 failed = feature.run(self)
                 return failed, feature
             else:
-                q = Queue()
-                proc = Process(target=self._run_feature,
-                               args=(feature, q))
-                proc.start()
-                a = proc.join(timeout)
-                if not proc.is_alive():
-                    if proc.exitcode >= 0:
-                        feature = q.get()
-                        return True, feature
-                    else:
-                        print("Child Process finished with exit code {}"
-                              .format(proc.exitcode))
-                        error = StatusError.crash
-                else:
-                    print("killing Child Process after {} seconds timeout"
-                          .format(timeout))
-                    proc.terminate()
-                    error = StatusError.timeout
+                next = 0
+                running = 0
+                error = StatusError.none
+                while next < len(feature.run_items):
+                    counter = 0
+                    for counter in range(0, len(feature.run_items)):
+                        feature.run_items[counter].counter = counter
+                    queue = Queue()
+                    proc = Process(target=self._run_feature,
+                                args=(feature, queue, next))
+                    proc.start()
 
-                def setStatus(item, status):
-                    if hasattr(item, "set_status") and callable(getattr(item,
-                                                                'set_status')):
-                        item.set_status(status[0])
-                        item.status_error = status[1]
-                    else:
-                        item.status = status[0]
-                        item.status_error = status[1]
+                    timer = Timer()
+                    while True:
+                        try:
+                            e, scenario = queue.get(block=True, timeout=1)
+                            if e == ModelRunner.QueueEvent.FEATURE_FINISHED:
+                                feature = scenario
+                                error = StatusError.none
+                                break
+                            elif e == ModelRunner.QueueEvent.SCENARIO_STARTED:
+                                running = scenario.counter
+                                timer.reset()
+                            elif e == ModelRunner.QueueEvent.SCENARIO_FINISHED:
+                                feature.run_items[scenario.counter] = scenario
+                        except Empty:
+                            pass
 
-                self._forEachItemInFeatures(feature,
-                                            setStatus,
-                                            [Status.failed, error])
-                return False, feature
+                        if timeout is not None:
+                            if timer.elapsed() > timeout:
+                                print("killing Child Process after {} seconds timeout".format(timer.elapsed()), flush=True)
+                                proc.terminate()
+                                error = StatusError.timeout
+                                break
+
+                        if not proc.is_alive():
+                            if proc.exitcode < 0:
+                                print("Child Process finished with exit code {}".format(proc.exitcode), flush=True)
+                                error = StatusError.crash
+                                break
+
+                    if error != StatusError.none:
+                        # if an error was detected we couldn't read the scenario from the queue, so we need to set status manually
+                        def setStatus(item, status):
+                            if hasattr(item, "set_status") and callable(getattr(item,
+                                                                        'set_status')):
+                                item.set_status(status[0])
+                                item.status_error = status[1]
+                            else:
+                                item.status = status[0]
+                                item.status_error = status[1]
+
+                        self._forEachItemInFeatures(feature.run_items[running],
+                                                    setStatus,
+                                                    [Status.failed, error])
+                        next = running + 1
+                    else:
+                        any_error = False
+                        for scenario in feature.run_items:
+                            if scenario.status is Status.failed:
+                                any_error = True
+                        return not any_error, feature
         except KeyboardInterrupt:
             self.abort(reason="KeyboardInterrupt")
             return False, feature
