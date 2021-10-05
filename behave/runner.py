@@ -784,14 +784,17 @@ class ModelRunner(object):
                                                     [Status.failed, error])
                         next = running + 1
                     else:
-                        any_error = False
-                        for scenario in feature.run_items:
-                            if scenario.status is Status.failed:
-                                any_error = True
-                        return not any_error, feature
+                        break
+
         except KeyboardInterrupt:
             self.aborted = True
             return False, feature
+
+        any_error = False
+        for scenario in feature.run_items:
+            if scenario.status is Status.failed:
+                any_error = True
+        return not any_error, feature
 
     def run_model(self, features=None):
         if self.config.just_list:
